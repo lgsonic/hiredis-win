@@ -1,0 +1,29 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 10.00
+# Visual Studio 2008
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "hiredis", "hiredis\hiredis.vcproj", "{0B88ACEC-C920-488D-9925-107CFD2CC263}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "testredis", "testredis\testredis.vcproj", "{9E4E7EA3-7B06-4951-9570-3029678683A5}"
+	ProjectSection(ProjectDependencies) = postProject
+		{0B88ACEC-C920-488D-9925-107CFD2CC263} = {0B88ACEC-C920-488D-9925-107CFD2CC263}
+	EndProjectSection
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Win32 = Debug|Win32
+		Release|Win32 = Release|Win32
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{0B88ACEC-C920-488D-9925-107CFD2CC263}.Debug|Win32.ActiveCfg = Debug|Win32
+		{0B88ACEC-C920-488D-9925-107CFD2CC263}.Debug|Win32.Build.0 = Debug|Win32
+		{0B88ACEC-C920-488D-9925-107CFD2CC263}.Release|Win32.ActiveCfg = Release|Win32
+		{0B88ACEC-C920-488D-9925-107CFD2CC263}.Release|Win32.Build.0 = Release|Win32
+		{9E4E7EA3-7B06-4951-9570-3029678683A5}.Debug|Win32.ActiveCfg = Debug|Win32
+		{9E4E7EA3-7B06-4951-9570-3029678683A5}.Debug|Win32.Build.0 = Debug|Win32
+		{9E4E7EA3-7B06-4951-9570-3029678683A5}.Release|Win32.ActiveCfg = Release|Win32
+		{9E4E7EA3-7B06-4951-9570-3029678683A5}.Release|Win32.Build.0 = Release|Win32
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+EndGlobal
