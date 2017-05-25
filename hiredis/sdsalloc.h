@@ -1,8 +1,7 @@
-/* Extracted from anet.c to work properly with Hiredis error reporting.
+/* SDSLib 2.0 -- A C dynamic strings library
  *
- * Copyright (c) 2006-2011, Salvatore Sanfilippo <antirez at gmail dot com>
- * Copyright (c) 2010-2011, Pieter Noordhuis <pcnoordhuis at gmail dot com>
- *
+ * Copyright (c) 2006-2015, Salvatore Sanfilippo <antirez at gmail dot com>
+ * Copyright (c) 2015, Redis Labs, Inc
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -30,35 +29,14 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef __NET_H
-#define __NET_H
+/* SDS allocator selection.
+ *
+ * This file is used in order to change the SDS allocator at compile time.
+ * Just define the following defines to what you want to use. Also add
+ * the include of your alternate allocator if needed (not needed in order
+ * to use the default libc allocator). */
 
-#include "hiredis.h"
-
-#ifdef _WIN32
-#include <winsock2.h>
-#include <ws2tcpip.h>
-#define snprintf _snprintf
-#define strcasecmp _stricmp
-#define strncasecmp _strnicmp
-#define close closesocket
-#undef errno
-#define errno WSAGetLastError()
-#endif
-
-#if defined(__sun) || defined(_AIX)
-#define AF_LOCAL AF_UNIX
-#endif
-
-int redisCheckSocketError(redisContext *c);
-int redisContextSetTimeout(redisContext *c, const struct timeval tv);
-int redisContextConnectTcp(redisContext *c, const char *addr, int port, const struct timeval *timeout);
-int redisContextConnectBindTcp(redisContext *c, const char *addr, int port,
-                               const struct timeval *timeout,
-                               const char *source_addr);
-#ifndef _WIN32
-int redisContextConnectUnix(redisContext *c, const char *path, const struct timeval *timeout);
-#endif
-int redisKeepAlive(redisContext *c, int interval);
-
-#endif
+#include "zmalloc.h"
+#define s_malloc zmalloc
+#define s_realloc zrealloc
+#define s_free zfree
