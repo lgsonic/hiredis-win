@@ -69,18 +69,14 @@ static void __redisSetErrorFromErrno(redisContext *c, int type, const char *pref
 
     if (prefix != NULL)
         len = snprintf(buf,sizeof(buf),"%s: ",prefix);
-#ifdef _WIN32
-    strerror_s(buf+len,sizeof(buf)-len,errno);
-#else
     strerror_r(errno,buf+len,sizeof(buf)-len);
-#endif
     
     __redisSetError(c,type,buf);
 }
 
 static int redisSetReuseAddr(redisContext *c) {
     int on = 1;
-    if (setsockopt(c->fd, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on)) == -1) {
+    if (setsockopt(c->fd, SOL_SOCKET, SO_REUSEADDR, (char*)&on, sizeof(on)) == -1) {
         __redisSetErrorFromErrno(c,REDIS_ERR_IO,NULL);
         redisContextCloseFd(c);
         return REDIS_ERR;
@@ -141,7 +137,7 @@ int redisKeepAlive(redisContext *c, int interval) {
     int val = 1;
     int fd = c->fd;
 
-    if (setsockopt(fd, SOL_SOCKET, SO_KEEPALIVE, &val, sizeof(val)) == -1){
+	if (setsockopt(fd, SOL_SOCKET, SO_KEEPALIVE, (char*)&val, sizeof(val)) == -1){
         __redisSetError(c,REDIS_ERR_OTHER,strerror(errno));
         return REDIS_ERR;
     }
@@ -183,7 +179,7 @@ int redisKeepAlive(redisContext *c, int interval) {
 
 static int redisSetTcpNoDelay(redisContext *c) {
     int yes = 1;
-    if (setsockopt(c->fd, IPPROTO_TCP, TCP_NODELAY, &yes, sizeof(yes)) == -1) {
+	if (setsockopt(c->fd, IPPROTO_TCP, TCP_NODELAY, (char*)&yes, sizeof(yes)) == -1) {
         __redisSetErrorFromErrno(c,REDIS_ERR_IO,"setsockopt(TCP_NODELAY)");
         redisContextCloseFd(c);
         return REDIS_ERR;
@@ -256,7 +252,7 @@ int redisCheckSocketError(redisContext *c) {
     int err = 0;
     socklen_t errlen = sizeof(err);
 
-    if (getsockopt(c->fd, SOL_SOCKET, SO_ERROR, &err, &errlen) == -1) {
+	if (getsockopt(c->fd, SOL_SOCKET, SO_ERROR, (char*)&err, &errlen) == -1) {
         __redisSetErrorFromErrno(c,REDIS_ERR_IO,"getsockopt(SO_ERROR)");
         return REDIS_ERR;
     }
@@ -275,11 +271,20 @@ int redisCheckSocketError(redisContext *c) {
 }
 
 int redisContextSetTimeout(redisContext *c, const struct timeval tv) {
+#ifdef _WIN32
+	DWORD msec = tv.tv_sec * 1000 + tv.tv_usec / 1000;
+	if (setsockopt(c->fd,SOL_SOCKET,SO_RCVTIMEO,(char*)&msec,sizeof(msec)) == -1) {
+#else
     if (setsockopt(c->fd,SOL_SOCKET,SO_RCVTIMEO,&tv,sizeof(tv)) == -1) {
+#endif
         __redisSetErrorFromErrno(c,REDIS_ERR_IO,"setsockopt(SO_RCVTIMEO)");
         return REDIS_ERR;
     }
+#ifdef _WIN32
+	if (setsockopt(c->fd,SOL_SOCKET,SO_RCVTIMEO,(char*)&msec,sizeof(msec)) == -1) {
+#else
     if (setsockopt(c->fd,SOL_SOCKET,SO_SNDTIMEO,&tv,sizeof(tv)) == -1) {
+#endif
         __redisSetErrorFromErrno(c,REDIS_ERR_IO,"setsockopt(SO_SNDTIMEO)");
         return REDIS_ERR;
     }
@@ -420,5 +425,39 @@ int redisContextConnectUnix(redisContext *c, const char *path, const struct time
 
     c->flags |= REDIS_CONNECTED;
     return REDIS_OK;
+}
+#else
+int strerror_r(int err, char* buf, size_t buflen) {
+	int size = FormatMessage(FORMAT_MESSAGE_FROM_SYSTEM |
+		FORMAT_MESSAGE_IGNORE_INSERTS,
+		NULL,
+		err,
+		0,
+		buf,
+		(DWORD)buflen,
+		NULL);
+	if (size > 2 && buf[size - 2] == '\r') {
+		/* remove extra CRLF */
+		buf[size - 2] = '\0';
+	}
+	else if (size == 0) {
+		LPSTR strerr = NULL;
+		size = FormatMessage(FORMAT_MESSAGE_FROM_SYSTEM |
+			FORMAT_MESSAGE_IGNORE_INSERTS |
+			FORMAT_MESSAGE_ALLOCATE_BUFFER,
+			NULL,
+			err,
+			0,
+			(LPSTR)&strerr,
+			0,
+			NULL);
+		if (size == 0)
+			strerr = StrDup(strerror(err));
+		size_t len = strlen(strerr) >= buflen ? buflen-1 : strlen(strerr);
+		strncpy(buf, strerr, len);
+		buf[len] = 0;
+		LocalFree(strerr);
+	}
+	return 0;
 }
 #endif

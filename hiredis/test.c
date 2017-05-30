@@ -2,13 +2,64 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <strings.h>
-#include <sys/time.h>
 #include <assert.h>
-#include <unistd.h>
 #include <signal.h>
 #include <errno.h>
 #include <limits.h>
+#ifdef _WIN32
+#include <winsock2.h>
+#include <time.h>
+#else
+#include <strings.h>
+#include <sys/time.h>
+#include <unistd.h>
+#endif
+
+#pragma warning(disable:4996)
+
+#ifdef _WIN32
+#define strcasecmp _stricmp
+#define strncasecmp _strnicmp
+#define SIGPIPE 13
+
+#define DELTA_EPOCH_IN_MICROSECS  11644473600000000Ui64
+
+struct timezone {
+	int  tz_minuteswest; /* minutes W of Greenwich */
+	int  tz_dsttime;     /* type of dst correction */
+};
+
+int gettimeofday(struct timeval *tv, struct timezone *tz) {
+	FILETIME ft;
+	unsigned __int64 tmpres = 0;
+	static int tzflag;
+
+	if (NULL != tv) {
+		GetSystemTimeAsFileTime(&ft);
+
+		tmpres |= ft.dwHighDateTime;
+		tmpres <<= 32;
+		tmpres |= ft.dwLowDateTime;
+
+		/*converting file time to unix epoch*/
+		tmpres /= 10;  /*convert into microseconds*/
+		tmpres -= DELTA_EPOCH_IN_MICROSECS;
+		tv->tv_sec = (long)(tmpres / 1000000UL);
+		tv->tv_usec = (long)(tmpres % 1000000UL);
+	}
+
+	if (NULL != tz) {
+		if (!tzflag) {
+			_tzset();
+			tzflag++;
+		}
+		tz->tz_minuteswest = _timezone / 60;
+		tz->tz_dsttime = _daylight;
+	}
+
+	return 0;
+}
+#endif
 
 #include "hiredis.h"
 
@@ -83,21 +134,23 @@ static int disconnect(redisContext *c, int keep_fd) {
     return -1;
 }
 
-static redisContext *connect(struct config config) {
+static redisContext *_connect(struct config config) {
     redisContext *c = NULL;
 
     if (config.type == CONN_TCP) {
         c = redisConnect(config.tcp.host, config.tcp.port);
+#ifndef _WIN32
     } else if (config.type == CONN_UNIX) {
         c = redisConnectUnix(config.unix.path);
     } else if (config.type == CONN_FD) {
         /* Create a dummy connection just to get an fd to inherit */
         redisContext *dummy_ctx = redisConnectUnix(config.unix.path);
         if (dummy_ctx) {
-            int fd = disconnect(dummy_ctx, 1);
+			int fd = disconnect(dummy_ctx, 1);
             printf("Connecting to inherited fd %d\n", fd);
             c = redisConnectFd(fd);
         }
+#endif
     } else {
         assert(NULL);
     }
@@ -223,7 +276,7 @@ static void test_append_formatted_commands(struct config config) {
     char *cmd;
     int len;
 
-    c = connect(config);
+	c = _connect(config);
 
     test("Append format command: ");
 
@@ -328,9 +381,10 @@ static void test_blocking_connection_errors(void) {
          strcmp(c->errstr,"Can't resolve: idontexist.local") == 0 ||
          strcmp(c->errstr,"nodename nor servname provided, or not known") == 0 ||
          strcmp(c->errstr,"No address associated with hostname") == 0 ||
-         strcmp(c->errstr,"no address associated with name") == 0));
+         strcmp(c->errstr,"no address associated with name") == 0 ||
+		 strcmp(c->errstr, "No such host is known. ") == 0));
     redisFree(c);
-
+#ifndef _WIN32
     test("Returns error when the port is not open: ");
     c = redisConnect((char*)"localhost", 1);
     test_cond(c->err == REDIS_ERR_IO &&
@@ -341,13 +395,14 @@ static void test_blocking_connection_errors(void) {
     c = redisConnectUnix((char*)"/tmp/idontexist.sock");
     test_cond(c->err == REDIS_ERR_IO); /* Don't care about the message... */
     redisFree(c);
+#endif
 }
 
 static void test_blocking_connection(struct config config) {
     redisContext *c;
     redisReply *reply;
 
-    c = connect(config);
+    c = _connect(config);
 
     test("Is able to deliver commands: ");
     reply = redisCommand(c,"PING");
@@ -428,7 +483,7 @@ static void test_blocking_io_errors(struct config config) {
     int major, minor;
 
     /* Connect to target given by config. */
-    c = connect(config);
+	c = _connect(config);
     {
         /* Find out Redis version to determine the path for the next test */
         const char *field = "redis_version:";
@@ -459,16 +514,27 @@ static void test_blocking_io_errors(struct config config) {
      * On >2.0, QUIT will return with OK and another read(2) needed to be
      * issued to find out the socket was closed by the server. In both
      * conditions, the error will be set to EOF. */
+#ifdef _WIN32
+	assert(c->err == REDIS_ERR_IO &&
+		strcmp(c->errstr,"An existing connection was forcibly closed by the remote host.") == 0);
+#else
     assert(c->err == REDIS_ERR_EOF &&
-        strcmp(c->errstr,"Server closed the connection") == 0);
+       strcmp(c->errstr,"Server closed the connection") == 0);
+#endif
     redisFree(c);
 
-    c = connect(config);
+	c = _connect(config);
     test("Returns I/O error on socket timeout: ");
-    struct timeval tv = { 0, 1000 };
+
+	struct timeval tv = { 0, 1000 };
     assert(redisSetTimeout(c,tv) == REDIS_OK);
+#ifdef _WIN32
     test_cond(redisGetReply(c,&_reply) == REDIS_ERR &&
-        c->err == REDIS_ERR_IO && errno == EAGAIN);
+        c->err == REDIS_ERR_IO);
+#else
+	test_cond(redisGetReply(c, &_reply) == REDIS_ERR &&
+		c->err == REDIS_ERR_IO && errno == EAGAIN);
+#endif
     redisFree(c);
 }
 
@@ -497,7 +563,7 @@ static void test_invalid_timeout_errors(struct config config) {
 }
 
 static void test_throughput(struct config config) {
-    redisContext *c = connect(config);
+	redisContext *c = _connect(config);
     redisReply **replies;
     int i, num;
     long long t1, t2;
@@ -673,6 +739,11 @@ int main(int argc, char **argv) {
     int throughput = 1;
     int test_inherit_fd = 1;
 
+#ifdef _WIN32
+	WSADATA	wsaData;
+	WSAStartup(MAKEWORD(2, 2), &wsaData);
+#endif
+
     /* Ignore broken pipe signal (for I/O error tests). */
     signal(SIGPIPE, SIG_IGN);
 
@@ -711,6 +782,7 @@ int main(int argc, char **argv) {
     test_append_formatted_commands(cfg);
     if (throughput) test_throughput(cfg);
 
+#ifndef _WIN32
     printf("\nTesting against Unix socket connection (%s):\n", cfg.unix.path);
     cfg.type = CONN_UNIX;
     test_blocking_connection(cfg);
@@ -722,6 +794,7 @@ int main(int argc, char **argv) {
         cfg.type = CONN_FD;
         test_blocking_connection(cfg);
     }
+#endif
 
     if (fails) {
         printf("*** %d TESTS FAILED ***\n", fails);

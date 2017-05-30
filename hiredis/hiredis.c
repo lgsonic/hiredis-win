@@ -992,11 +992,7 @@ void __redisSetError(redisContext *c, int type, const char *str) {
     } else {
         /* Only REDIS_ERR_IO may lack a description! */
         assert(type == REDIS_ERR_IO);
-#ifdef _WIN32
-        strerror_s(c->errstr,sizeof(c->errstr),errno);
-#else
         strerror_r(errno,c->errstr,sizeof(c->errstr));
-#endif
     }
 }
 

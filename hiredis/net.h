@@ -38,6 +38,7 @@
 #ifdef _WIN32
 #include <winsock2.h>
 #include <ws2tcpip.h>
+#include <shlwapi.h>
 #define snprintf _snprintf
 #define strcasecmp _stricmp
 #define strncasecmp _strnicmp
@@ -58,6 +59,8 @@ int redisContextConnectBindTcp(redisContext *c, const char *addr, int port,
                                const char *source_addr);
 #ifndef _WIN32
 int redisContextConnectUnix(redisContext *c, const char *path, const struct timeval *timeout);
+#else
+int strerror_r(int err, char* buf, size_t buflen);
 #endif
 int redisKeepAlive(redisContext *c, int interval);
 
